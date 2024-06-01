@@ -112,7 +112,7 @@
 		let codeScriptsDel = '';
 		// на https://paybis.com/ не работает title и description
 		// цикл виснет. Нужно не удалять src и href
-		
+/*		
 		codeScriptsDel = code.getElementsByTagName('body')[0].cloneNode(true);
 		
 		function codeClear(element) {
@@ -144,7 +144,7 @@
 			return element;
 		}
 		codeScriptsDel = codeClear(codeScriptsDel);
-		
+*/		
 		for (let i = 0; i < meta.length; i += 1) {
 			if (meta[i].name.toLowerCase() === 'description') descr = meta[i];
 			if (meta[i].name.toLowerCase() === 'keywords') keyw = meta[i];
