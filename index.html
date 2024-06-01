@@ -1,0 +1,316 @@
+﻿<!DOCTYPE html>
+<html>
+	<head>
+		<title>galaxy</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style type="text/css">
+			body { margin: 0; overflow: hidden; width: 100vw; height: 100vh; background-image: url("https://user-images.githubusercontent.com/26748614/96337246-f14d4580-1085-11eb-8793-a86d929e034d.jpg"); background-size: cover; backdrop-filter:  brightness(50%); font-size: 13px; line-height: 13px; overscroll-behavior: none;}
+			.loader {transform: rotateZ(45deg);perspective: 1000px;border-radius: 50%;width: 30vh;height: 30vh;color: #fff; }
+			.loader:before,.loader:after {content: ''; display: block; position: absolute; top: 0; left: 0; width: inherit; height: inherit; border-radius: 50%; transform: rotateX(70deg); animation: 1s spin linear infinite;}
+			.loader:after {color:rgb(0, 255, 51);transform: rotateY(70deg);animation-delay: .4s;}
+			@keyframes rotate {0% {transform: translate(-50%, -50%) rotateZ(0deg);}100% {transform: translate(-50%, -50%) rotateZ(360deg);}}
+			@keyframes rotateccw {0% {transform: translate(-50%, -50%) rotate(0deg);}100% {transform: translate(-50%, -50%) rotate(-360deg);}}
+			@keyframes spin {0%,100% {box-shadow: .2em 0px 0 0px currentcolor;}12% {box-shadow: .2em .2em 0 0 currentcolor;}25% {box-shadow: 0 .2em 0 0px currentcolor;}37% {box-shadow: -.2em .2em 0 0 currentcolor;}50% {box-shadow: -.2em 0 0 0 currentcolor;}62% {box-shadow: -.2em -.2em 0 0 currentcolor;}75% {box-shadow: 0px -.2em 0 0 currentcolor;}87% {box-shadow: .2em -.2em 0 0 currentcolor;}}
+		</style>
+	</head>
+	<body onLoad="document.querySelectorAll('.loader').forEach(function(el) { el.style.display = 'none'; });">
+
+		<div id="container"></div>
+		<div class="loader" style="position: fixed; top: calc(50% - 15vh);; left: calc(50% - 15vh); "></div>
+
+		<script type="module">
+			import * as THREE from './three.module.js';
+			import { OrbitControls } from './OrbitControls.js';
+			import { GUI } from './lilgui.js';
+
+
+			
+			// --------------- ШЕЙДЕРЫ
+			// шейдер основной
+			const darkstarMaterial = new THREE.ShaderMaterial( {
+				uniforms: { pixelRatio:{type:"f",value:innerHeight} },
+				vertexShader:'attribute vec3 vertColor; attribute float size; uniform float pixelRatio; varying vec3 vPosition; varying vec3 mPosition; varying vec3 vColor; void main(){ vPosition = position; float a = length( position ); mPosition = position; vec4 mvPosition = modelViewMatrix * vec4(mPosition , 1.0 ); gl_Position = mvPosition*projectionMatrix; gl_PointSize = pixelRatio * size * ( 1.0 ) / length( mvPosition.xyz ); vColor = vertColor; }', 
+				fragmentShader: 'uniform float z; varying vec3 vPosition; varying vec3 mPosition; varying vec3 vColor; void main(){ float a = distance( mPosition , vPosition ); if( a > 0.0 ) a = 1.0; float b = 2.0 * max( 0.15, 0.0065 * length( vPosition )); float c = distance( gl_PointCoord, vec2( 0.5 ) ); float starlook = -( c - 0.5) * 1.0 ; float gaslook = ( 1.0 ) / ( c * 10.0 ); float texture = starlook + gaslook; gl_FragColor = vec4(vColor, 0.1) * texture * ( 1.0 - a*0.35); }',
+				transparent:true, depthTest:false, blending: THREE.AdditiveBlending
+			});
+			const galaxyMaterial = new THREE.ShaderMaterial( {
+				uniforms: { pixelRatio:{type:"f",value:innerHeight} },
+				vertexShader:'attribute vec3 vertColor; attribute float size; uniform float pixelRatio; varying vec3 vPosition; varying vec3 mPosition; varying vec3 vColor; void main(){ vPosition = position; float a = length( position ); mPosition = position; vec4 mvPosition = modelViewMatrix * vec4(mPosition , 1.0 ); gl_Position = mvPosition*projectionMatrix; gl_PointSize = pixelRatio * size * ( 5.0 ) / length( mvPosition.xyz ); vColor = vertColor; }', 
+				fragmentShader: 'uniform float z; varying vec3 vPosition; varying vec3 mPosition; varying vec3 vColor; void main(){ float a = distance( mPosition , vPosition ); if( a > 0.0 ) a = 1.0; float b = 2.0 * max( 0.15, 0.0065 * length( vPosition )); float c = distance( gl_PointCoord, vec2( 0.5 ) ); float starlook = -( c - 0.5) * 1.0 ; float gaslook = ( 1.0 ) / ( c * 10.0 ); float texture = starlook + gaslook; gl_FragColor = vec4(vColor, 0.1) * texture * ( 1.0 - a*0.35); }',
+				transparent:true, depthTest:false, blending: THREE.AdditiveBlending
+			});
+
+			const material5			= new THREE.LineBasicMaterial({color: 0x00ffff, opacity: 0.05, transparent: true, blending: THREE.AdditiveBlending, depthTest: false});
+			const material6 		= new THREE.LineBasicMaterial({color: 0x00ffff, opacity: 0.15, transparent: true, blending: THREE.AdditiveBlending, depthTest: false});
+
+			const pMaterial			= new THREE.PointsMaterial({vertexColors: true,	opacity: 0.990, transparent: true, blending: THREE.AdditiveBlending, depthTest: false, sizeAttenuation:false, size: 2.00/*, map: SUNspMap*/});
+			const filterMaterial	= new THREE.PointsMaterial({vertexColors: true,	opacity: 0.50, transparent: true, blending: THREE.AdditiveBlending, depthTest: false, sizeAttenuation:false, size: 4.00/*, map: SUNspMap*/});
+
+			/////-------------------------- vars --------------------------------------
+			
+			
+			let container, stats, Rotator1 = 1;
+			let camera, scene, renderer, group, labelRenderer;
+			let nameseed = 354;  	//зерно шума для названий
+			let seed = 354;  		//зерно шума для звезд		
+			
+			/////-------------------------- GUI --------------------------------------
+			
+			const gui = new GUI();
+			
+			const optionsj = {
+				naAutoRotate: true,
+				galaxyNumStars: 10000,	galaxySeed: 352, galaxyRandomize: true, galaxySizeMin: 1000, galaxySizeMax: 3000, 
+				AxisA: 92.8705805283971,	AxisB: 127.81693689758, ArmsAngle: -9.0, BulbSize:  0.17723500970751,	Ellipticity: 0.060795194993727, Spiro: 1, Rotator: 1, Back: 0,
+				galaxycolor1: 0x1e58fa,	galaxycolor2: 0x0fb7ff, galaxycolor3: 0xcafbff,	galaxycolor4: 0xf9f9f7,
+				galaxycolor5: 0xfbf352,	galaxycolor6: 0xf29700,	galaxycolor7: 0xeb3d01,	galaxycolor8: 0xf50707,
+			};
+			
+
+			
+			// галактика
+			const folderGalaxy = gui.addFolder( '######## Galaxy ########' );
+			folderGalaxy.add( optionsj, 'galaxySeed', 0, 1000, 0.01).onFinishChange( function( v ){			
+			seed = optionsj.galaxySeed;
+				if (false) {
+					
+					optionsj.AxisA = 80 + rand(1) * 25;
+					optionsj.AxisB = optionsj.AxisA + 20 + rand(2) * 40;
+					optionsj.ArmsAngle = (( rand(3) * 2 - 1 ) > 0 ? 1 : - 1 ) * 12 + 3;
+					optionsj.BulbSize = rand(4) * 0.6;
+					optionsj.Ellipticity = 0.1 + rand(5) * 0.1 ;
+					optionsj.Spiro = 0.1 + rand(5) * 0.1 ;
+					optionsj.Rotator = 0.1 + rand(5) * 0.1 ;
+					optionsj.Back=0;
+				};
+				galaxi1init();
+			});
+			folderGalaxy.add( optionsj, 'galaxyNumStars' , 0, 1000, 1000 ).onFinishChange( function(){ galaxi1init() }); //500000, 5000
+
+			const folderGalaxyBase = folderGalaxy.addFolder( 'galaxyBase' );
+			const contAxisA 		= folderGalaxyBase.add( optionsj, 'AxisA', 0, 150).enable().listen().onFinishChange( function(){ galaxi1init() });
+			const contAxisB 		= folderGalaxyBase.add( optionsj, 'AxisB', 0, 150).enable().listen().onFinishChange( function(){ galaxi1init() });
+			const contArmsAngle 	= folderGalaxyBase.add( optionsj, 'ArmsAngle', -25, 25).enable().listen().onFinishChange( function(){ galaxi1init() });
+			const contBulbSize 		= folderGalaxyBase.add( optionsj, 'BulbSize', 0, 0.5).enable().listen().onFinishChange( function(){ galaxi1init() });
+			const contEllipticity 	= folderGalaxyBase.add( optionsj, 'Ellipticity', 0, 5).enable().listen().onFinishChange( function(){ galaxi1init() });
+			const Spiro 	= folderGalaxyBase.add( optionsj, 'Spiro', 0, 2).enable().listen().onFinishChange( function(){ galaxi1init() });
+			const Rotator 	= folderGalaxyBase.add( optionsj, 'Rotator', 0, 4).enable().listen().onFinishChange( function(){ galaxi1init() });
+			const Back 	= folderGalaxyBase.add( optionsj, 'Back', 0, 80, 1).enable().listen().onFinishChange( function(){ backinit() });
+			const interval = 1/10;
+			var bdelta1 = 0;
+			var bclock = new THREE.Clock();
+
+			//---- генератор шума для галактики
+			function rand(a) {
+				var t = a + seed*5000000;
+				t  += 0x6D2B79F5;
+				t = Math.imul(t ^ t >>> 15, t | 1);
+				t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+				t = ((t ^ t >>> 14) >>> 0) / 4294967296
+				seed = t*10000;
+				return t ;
+			}
+			//----проверка шума			
+			//for(let i=0; i<3000; i++) { console.log(rand(1))	 ;  }
+			
+			
+			//------------------------------------------- ТЕЛО ----------------------------------------
+			
+			init();
+			animate();
+			
+			//------------------------------------------- инициализация ----------------------------------------
+			function init() {
+				
+				container = document.getElementById( 'container' );
+				
+				scene = new THREE.Scene();
+				const color = new THREE.Color();				
+				
+				scene.background = new THREE.Color(0x000000);
+				
+				// --- камера
+				camera = new THREE.PerspectiveCamera( 60, innerWidth/innerHeight, 0.5, 3200000 );
+				camera.position.set( 2500, 1450000, 25000);
+				
+				// --- управление
+				const controls = new OrbitControls( camera, container );
+				//controls.autoRotate = true;
+				//controls.autoRotateSpeed = 4;					
+				controls.minDistance = 1;
+				controls.maxDistance = 2200000;
+				controls.enablePan = false;
+				controls.target.set(0, 0, 0);
+				
+
+				
+				// --- группа 
+				group = new THREE.Group();
+				scene.add( group );
+				
+				// --- галактика1
+				galaxi1init();
+				backinit();
+				
+				//координатная сетка
+				group.remove( group.getObjectByName("setka") );
+				const groupsetka = new THREE.Group();
+				for(let i=0; i<180; i++){
+					var setkapnts = [];
+					var phi = 0;
+					var radius = 600000;
+					var theta = i*Math.PI/90;
+					setkapnts.push( new THREE.Vector3( 0, 0 , 0) );
+					setkapnts.push( new THREE.Vector3( Math.cos(phi)*Math.cos(theta)*radius, Math.sin(phi)*radius , Math.cos(phi)*Math.sin(theta)*radius ));
+					var setkageometry = new THREE.BufferGeometry().setFromPoints( setkapnts );
+					var line = new THREE.Line( setkageometry, (i % 10 == 0) ? material6 : material5);
+					groupsetka.add( line );
+				}
+				for(let i=0; i<61; i++) {
+					const curve = new THREE.EllipseCurve( 0.0, 0.0, i*10000, i*10000, 0.0, 2.0 * Math.PI,false,0);
+					const orbit = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints( curve.getSpacedPoints(180) ), (i % 10 == 0) ? material6 : material5 );
+					orbit.rotation.x = Math.PI/2;
+					groupsetka.add( orbit );
+				}
+				groupsetka.name = "setka";
+				group.add( groupsetka );
+				
+
+				
+				// --- рендер
+				renderer = new THREE.WebGLRenderer( { antialias: true,  alpha: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+				
+				// --- изменение размеров окна
+				window.addEventListener( 'resize', onWindowResize );
+			}
+			
+			//-------------------------- процедурки
+
+			// --- задний фон
+			function backinit() {
+				if (optionsj.Back==0){
+					let textureLoader = new THREE.CubeTextureLoader();
+					textureLoader.setPath( '/img/box1/' );
+					let textureCube = textureLoader.load( [ '1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg', '6.jpg' ] );
+					scene.background = textureCube;
+				} else {
+					console.log('start',optionsj.Back)
+					let textureLoader = new THREE.TextureLoader();
+					textureLoader.setPath( '/img/bg/' );
+					let texture = textureLoader.load([optionsj.Back+".jpg"], () => {
+						let rt = new THREE.WebGLCubeRenderTarget(texture.image.height);
+						rt.fromEquirectangularTexture(renderer, texture);
+						scene.background = rt.texture;
+						console.log('stop',optionsj.Back)
+					});
+					
+				}
+			}
+			//галактика
+			function galaxi1init() {
+			
+
+				
+				
+				seed = optionsj.galaxySeed;
+				group.remove( group.getObjectByName("galaxi1") );
+				group.remove( group.getObjectByName("galaxiline1") );
+				const material9 = new THREE.LineBasicMaterial({ 	color: 0xf0f0f0,  transparent: true,   opacity: 0.5});
+				const geometry = new THREE.BufferGeometry();
+				var positions = [];
+				var colors = [];
+				var sizes = [];
+				var maja, mina;
+				const n = optionsj.galaxyNumStars;
+				const axis1 = optionsj.AxisA;
+				const axis2 = optionsj.AxisB;
+				axis1 > axis2 ? ( maja = axis1, mina = axis2 ) : axis1 == axis2 ? ( maja = axis1 + 1, mina = axis2 ) : ( maja = axis2, mina = axis1 );
+				const armsAngle = optionsj.ArmsAngle;
+				const bulbSize = optionsj.BulbSize;
+				const ellipticity = optionsj.Ellipticity;
+				const Spiro = optionsj.Spiro;
+				const Rotator = optionsj.Rotator;
+				
+				const sizemin = optionsj.galaxySizeMin;
+				const sizemax = optionsj.galaxySizeMax;
+				const cats = [optionsj.galaxycolor1, optionsj.galaxycolor2, optionsj.galaxycolor3, optionsj.galaxycolor4,
+				optionsj.galaxycolor5, optionsj.galaxycolor6, optionsj.galaxycolor7, optionsj.galaxycolor8 ];
+				for(var i=0; i<n; i++){
+
+
+
+					let dist = rand(i*5+1);
+					if(dist<bulbSize) dist=dist*4;
+					if(dist<bulbSize/2) dist=dist*2;
+					let angle = (dist*Spiro-bulbSize)*armsAngle;
+					let a = maja*dist;
+					let b = mina*dist;
+					let e = Math.sqrt(a*a-b*b)/a;
+					let phi = ellipticity*Math.PI/2*(1-dist)*( rand(i*5+2)*2-1);
+					let theta = rand(i*5+3)*Math.PI*2;
+					//let theta = rand(i*5+3)**Math.PI*8;
+					
+					let radius = 2000 + 4650*(Math.sqrt(b*b/(1-e*e*Math.pow(Math.cos(theta),2)))*(1+rand(i*5+4)*0.001));
+					if(dist>bulbSize) theta+= angle + ((Math.PI/(1+Rotator))*( ~~( Rotator* rand(i*5+5)+ 0.5))) ;
+
+					positions.push( Math.cos(phi)*Math.cos(theta)*radius );
+
+					positions.push( Math.sin(phi)*radius );
+					positions.push( Math.cos(phi)*Math.sin(theta)*radius );
+					const color = new THREE.Color( cats[ Math.floor(10*rand(i*5+4)) ] );
+					//color.setHSL( i / n, 1.0, 0.5 );
+					colors.push( color.r, color.g, color.b );
+					//sizes.push( rand(i*5+3)*20 );
+					sizes.push( sizemin+sizemax*rand(i*5+5) );
+				}
+				geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
+				geometry.setAttribute( 'vertColor', new THREE.Float32BufferAttribute( colors, 3 ) );
+				geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
+				geometry.setAttribute( 'size', new THREE.Float32BufferAttribute( sizes, 1 ).setUsage( THREE.DynamicDrawUsage ) );
+				
+				
+				const particleSystem = new THREE.Points( geometry, /*pMaterial*/galaxyMaterial);
+				particleSystem.name = "galaxi1";
+				group.add(particleSystem );	
+			};
+
+
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				labelRenderer.setSize( window.innerWidth, window.innerHeight );	//
+				renderer.render( scene, camera );
+			}
+
+
+			function animate(){
+				const deltax = bclock.getDelta();
+				bdelta1 += deltax;
+				camera.updateMatrixWorld();
+				requestAnimationFrame(animate);
+				if (bdelta1 > interval) {
+					renderer.render( scene, camera );
+					bdelta1 = bdelta1 % interval;
+				}
+			}
+/*
+				requestAnimationFrame(animate);
+				//controls.update();
+				let Data = new Date();
+				if(optionsj.naAutoRotate) scene.rotation.z = 0.001* Math.sin(Data.getMilliseconds() *0.0031415); //.00005*
+				//group.rotation.z+=.001;
+				stats.update();
+				renderer.render( scene, camera );
+				labelRenderer.render( scene, camera );				
+*/
+		</script>
+	</body>
+</html>
+
+
