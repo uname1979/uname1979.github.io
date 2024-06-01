@@ -348,7 +348,7 @@
 	};
 })();
 
-
+/*
 javascript:(function(){
 	var%20s=document.createElement('script');
 	s.type='text/javascript';s.src='http://f0990311.xsph.ru/metab.js';
@@ -356,3 +356,4 @@ javascript:(function(){
 	document.getElementsByTagName('body')[0].appendChild(s)
 })();
 void(0);
+*/
